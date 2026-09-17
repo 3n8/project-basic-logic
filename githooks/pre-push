@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# githooks/pre-push — runs scripts/check before push.
+# Enable via:  git config core.hooksPath githooks
+
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+exec "$HERE/../scripts/check"

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# scripts/check — local CI. shellcheck bin/ + validate inputs/*.json.
+# Run by githooks/pre-push. Exit non-zero on any failure.
+
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/.."
+
+echo "[check] shellcheck bin/ ..."
+
+if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "[check] WARN: shellcheck not installed; skipping" >&2
+else
+    # Look for issues at severity=warning+ in every executable script.
+    # shellcheck disable=SC2046
+    shellcheck --severity=warning --shell=bash bin/*.sh lib/*.sh scripts/check githooks/pre-push
+fi
+
+echo "[check] validating inputs/*.json against schemas/align-segment.schema.json ..."
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "[check] FATAL: jq is required" >&2
+    exit 1
+fi
+
+if [ -x "$(command -v ajv 2>/dev/null)" ] || command -v ajv >/dev/null 2>&1; then
+    AJV="ajv"
+elif command -v check-jsonschema >/dev/null 2>&1; then
+    AJV="check-jsonschema"
+fi
+
+shopt -s nullglob
+fail=0
+for f in inputs/*.json; do
+    [ -f "$f" ] || continue
+    echo "[check]   - $f"
+    if [ -n "${AJV:-}" ]; then
+        "$AJV" -s schemas/align-segment.schema.json -d "$f" || fail=$((fail+1))
+    else
+        # Manual minimum sanity-check: model, duration, segments[].
+        jq -e '
+            .model and (.duration | type == "number") and (.segments | type == "array") and
+            (.segments | length > 0) and (.segments | all(has("text") and has("start") and has("end")))
+        ' "$f" >/dev/null || { echo "[check]   FAIL: $f does not satisfy required shape" >&2; fail=$((fail+1)); }
+    fi
+done
+shopt -u nullglob
+
+if [ "$fail" -gt 0 ]; then
+    echo "[check] FAIL: $fail file(s) failed validation" >&2
+    exit 1
+fi
+
+echo "[check] ok"

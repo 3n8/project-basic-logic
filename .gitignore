@@ -1,0 +1,19 @@
+# Inputs and outputs are runtime artifacts; not code.
+inputs/*
+!inputs/.gitkeep
+!inputs/README.md
+outputs/*
+!outputs/.gitkeep
+
+# Editor and OS debris.
+.DS_Store
+*.swp
+*.swo
+*.bak
+*.orig
+*~
+.idea/
+.vscode/
+
+# Local-only logs from `scripts/check` or ad-hoc runs.
+*.log

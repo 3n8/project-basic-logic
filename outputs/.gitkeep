@@ -1,0 +1,2 @@
+# Outputs land here. One subdirectory per video: `outputs/<name>/`.
+# The orchestrator (`bin/render-master.sh <name>`) creates and populates it.
