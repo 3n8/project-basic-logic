@@ -107,6 +107,39 @@ bin/make-srt.sh <align-words.json> <out.srt>
 Emits a one-line JSON summary on stderr. Replaced `bin/make-srt.py`, which it
 matches byte for byte.
 
+## `bin/group-cues.sh`
+
+Pack word-level aligner JSON into semantic shot cues (sub-second precision,
+sentence / pause / comma / 8.5 s hard-cap boundary rules), in bash + jq + awk.
+
+```
+bin/group-cues.sh <align-words.json> <cues.json>
+```
+
+Emits a one-line JSON summary on stderr. Replaced `bin/group-cues.py`, which
+it matches byte for byte on `inputs/reference/{prefix,full}_align_words.json`.
+Supports `--dry-run`.
+
+Documented deviation from the Python source: a segment whose `text` is JSON
+`null` is skipped (Python's `str(None)` would have kept the literal word
+`None`; the bash port matches the `if not text: continue` semantic after
+`.strip()` instead). Missing `text` keys are also skipped, matching Python.
+
+## `bin/make-placeholder-frames.sh`
+
+One uniquely coloured 1920x1080 PNG per cue, named `shot_NNNN` (1-based) so
+`write_durations_tsv` can re-discover them. The colour index is `i % 13`
+— the 14th palette entry is intentionally unreachable, matching the Python
+source.
+
+```
+bin/make-placeholder-frames.sh <cues.json> <frames_dir>
+```
+
+Emits a one-line JSON summary on stderr. Replaced `bin/make-placeholder-frames.py`,
+which it matches byte for byte on the full reference cue set (40 PNGs).
+Supports `--dry-run`.
+
 ## `bin/make-smoke-fixture.sh`
 
 Generate the end-to-end fixture used by `scripts/smoke` (3 shots × 2 s, quiet

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- `bin/group-cues.sh`: bash + jq + awk cue packer, byte-identical to the
+  removed `bin/group-cues.py` (verified on both reference alignments: 118-word
+  prefix and 683-word full; cmp + sha256sum match, plus a 250-case randomized
+  comparison and a hand-built edge fixture).
+- `bin/make-placeholder-frames.sh`: bash port that emits byte-identical PNGs
+  to the removed `bin/make-placeholder-frames.py` (verified on the full
+  reference cue set: 40 PNGs; cmp + sha256sum match).
+- Removed the last two Python helpers: `bin/group-cues.py` and
+  `bin/make-placeholder-frames.py`. `bin/` is now bash + FFmpeg + jq + awk only.
+- `bin/normalize-loudness.sh`: the loudnorm pass-1 measurement is extracted from
+  ffmpeg's stderr with awk instead of an inline `python3 -c`. That was the last
+  runtime Python dependency in the repo, so the "bash + FFmpeg only" claim in
+  GOAL.md and README.md is now literally true.
+- Fixed: `bin/group-cues.sh` treats a falsy top-level `duration` (`0`, `null`,
+  absent) as missing, matching Python's `data.get("duration") or words[-1]["end"]`.
+- Fixed (latent, unreachable): the `bin/group-cues.sh` forward-merge shift loop
+  stopped one element short. The branch cannot be reached — every non-final pack
+  flush requires a cue of at least 2.0 s — but the bound is now correct.
+- GOAL.md, README.md, docs/PIPELINE.md: explicit "no creative layer" / dev-utilities
+  boundary text; awk added to the prerequisites table.
+- `bin/group-cues.sh` documented deviation: a segment whose `text` is JSON `null`
+  is skipped (matches Python's `if not text: continue` after `.strip()` instead
+  of `str(None)` keeping the literal word `None`); missing `text` keys are also
+  skipped, matching Python.
 - `--dry-run` (and `DRY_RUN=1`) on every `bin/` script: prints the exact planned
   ffmpeg command and writes no media. Implemented once in `lib/common.sh`
   (`parse_common_flags`, `run`, `make_dir`, `wrote`); all ffmpeg calls route through `run`.

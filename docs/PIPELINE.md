@@ -54,3 +54,12 @@ single file with a fixed name. Same inputs → same outputs:
 The encoder (`libx264 -preset slow -tune stillimage`) is deterministic on
 identical inputs. `loudnorm` measured values are deterministic on
 identical input audio.
+
+## Outside the master path
+
+- `bin/group-cues.sh` — deterministic rule engine that packs a word-level
+  aligner JSON into shot cues. Not invoked by `render-master.sh`; used to
+  build a cuttable length from an aligner JSON alone.
+- `bin/make-placeholder-frames.sh` — deterministic 1920x1080 PNG per cue
+  for running the pipeline before approved frames exist. Not invoked by
+  `render-master.sh`.

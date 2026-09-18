@@ -40,7 +40,13 @@ run "$FFMPEG_BIN" -nostdin -hide_banner -loglevel info -i "$in" \
     -af "loudnorm=I=$LOUDNORM_I:TP=$LOUDNORM_TP:LRA=$LOUDNORM_LRA:print_format=json" \
     -f null - 2> "$tmp"
 # ffmpeg prints a multi-line loudnorm JSON object on stderr. Take the last brace block.
-measured="$(python3 -c 'import re,sys; t=open(sys.argv[1]).read(); b=re.findall(r"\{[^{}]*\}", t); print(b[-1] if b else "")' "$tmp")"
+# awk, not grep: the object spans lines, so a line-oriented -o would miss it.
+measured="$(awk '
+    /\{/ { buf = ""; inb = 1 }
+    inb  { buf = buf $0 "\n" }
+    /\}/ { if (inb) { last = buf; inb = 0 } }
+    END  { printf "%s", last }
+' "$tmp")"
 
 [ -n "$measured" ] || die "pass 1 produced no loudnorm JSON"
 log "normalize-loudness: measured: $measured"

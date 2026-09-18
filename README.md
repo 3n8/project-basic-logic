@@ -46,9 +46,28 @@ bin/render-master.sh "ep001" outputs/ep001/master.mp4
 | bash | 5+ | All `bin/` scripts use `set -euo pipefail` |
 | ffmpeg | 9.0+ | The whole point |
 | jq | 1.6+ | Read aligner JSON into per-shot durations |
+| awk | gawk 4+ | Used by `make-srt.sh` and `group-cues.sh` for byte-identical JSON formatting |
 | shellcheck | 0.9+ | Run by `scripts/check` |
 
-On Hel, all four are already installed. On macOS: `brew install ffmpeg jq shellcheck bash`.
+On Hel, all five are already installed. On macOS: `brew install ffmpeg jq shellcheck bash gawk`.
+
+There is no Python anywhere in `bin/` — `make-srt.sh`, `group-cues.sh`, and
+`make-placeholder-frames.sh` are bash ports of former `.py` helpers, byte-identical
+to the originals.
+
+## Dev utilities outside the master path
+
+`bin/group-cues.sh` and `bin/make-placeholder-frames.sh` are deterministic dev
+utilities, not pipeline stages. `render-master.sh` never calls them.
+
+- `group-cues.sh` — aligns words to cue boundaries. Shot boundaries for a real
+  video are approved upstream, before ComfyUI renders one PNG per shot; this
+  rule engine exists so a full-length cut can be built and inspected from an
+  aligner JSON alone.
+- `make-placeholder-frames.sh` — labelled 1920x1080 stills, one per cue, for
+  running the pipeline before the approved frame set exists.
+
+Both are byte-identical to the retired Python scripts they replace.
 
 ## Pipeline at a glance
 
