@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Fixed `bin/mix-audio.sh`: the `amix` filter graph mixed `$music_vol[music]`,
+  which shellcheck flags as SC1087 (array subscript) and which is fragile in
+  bash. Braced as `${music_vol}[music]`. `shellcheck --severity=warning` is now
+  clean across `bin/*.sh`, `lib/*.sh`, `scripts/check`, `githooks/pre-push`.
+  `scripts/check`'s shellcheck step now actually runs on this host (shellcheck
+  0.10.0 in `~/.local/bin`) instead of printing its skip WARN.
+- `bin/render-master.sh` dry-run closing line now reads "no media written" instead
+  of "nothing written": dry-run still writes the two text intermediates
+  (`durations.tsv`, `concat.txt`) into the run directory, it only skips media.
+- Verified `bin/extract-segment-duration.sh` byte-matches `outputs/full/durations.tsv`
+  and `outputs/prefix/durations.tsv` when run on the shot-level `align-segment.json`
+  inputs. On the word-level `inputs/reference/full_align_words.json` it emits one row
+  per word (683), which is expected — that file has no shot boundaries.
 - `bin/group-cues.sh`: bash + jq + awk cue packer, byte-identical to the
   removed `bin/group-cues.py` (verified on both reference alignments: 118-word
   prefix and 683-word full; cmp + sha256sum match, plus a 250-case randomized

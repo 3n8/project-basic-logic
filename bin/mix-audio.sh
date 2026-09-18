@@ -30,7 +30,7 @@ else
     require_file "$music"
     run "$FFMPEG_BIN" -nostdin -hide_banner -loglevel error -y \
         -i "$narration" -i "$music" \
-        -filter_complex "[1:a]volume=$music_vol[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[mix]" \
+        -filter_complex "[1:a]volume=${music_vol}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[mix]" \
         -map "[mix]" \
         -ar 48000 -ac 2 -c:a pcm_s24le \
         "$out"

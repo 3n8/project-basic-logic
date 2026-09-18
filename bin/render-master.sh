@@ -109,7 +109,7 @@ else
 fi
 
 if dry_run_enabled; then
-    log "render-master: DRY RUN complete — nothing written"
+    log "render-master: DRY RUN complete — no media written"
 else
     log "render-master: $MASTER ready"
 fi

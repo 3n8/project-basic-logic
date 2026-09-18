@@ -31,5 +31,8 @@ _None — all items below are done._
       `Makefile` with `render`, `dry-run`, `check`, `smoke`, `clean`, `help`.
 - [x] Add a tiny smoke test: `inputs/smoke/align-segment.json` + `inputs/smoke/frames/shot_NNNN.png` + `inputs/smoke/narration.mp3` that runs end-to-end on an empty Hel home in <90 s.
       `bin/make-smoke-fixture.sh` generates the fixture (inputs/ is gitignored); `scripts/smoke` runs it. Measured 1 s.
+- [x] Verify shellcheck at severity=warning is clean for `bin/*.sh`, `lib/*.sh`, `scripts/check`, `githooks/pre-push`.
+      shellcheck 0.10.0 installed in `~/.local/bin`; one real error found and fixed (`bin/mix-audio.sh` SC1087,
+      `$music_vol[music]` → `${music_vol}[music]`). `scripts/check` no longer prints the skip WARN. Verified clean.
 - [x] 0.1.0 scaffold.
 - [x] copy auth.json + gh + tea configs from Hel so opencode does not need forced --model
