@@ -1,71 +1,113 @@
-# project-basic-logic — agents
+# AGENTS.md — working agreement for project-basic-logic
 
-This file is for humans and for new AI sessions. Read it before changing the repo.
+Read [README.md](README.md) first for what this repo is and how the pipeline works.
+[GOAL.md](GOAL.md) is the one-sentence contract. This file is the rules for **changing**
+the repo without breaking its promise.
 
-## Goal
+## The promise
 
-**project-basic-logic is the deterministic finisher for the video pipeline.**
+**Same inputs in → same bytes out.** Everything below exists to protect that.
 
-Narration audio is rendered by [`qwen3-tts`](https://github.com/3n8/qwen3-tts).
-Visual frames are produced by ComfyUI on Hel.
-[`qwen3-aligner`](https://github.com/3n8/qwen3-aligner) (sibling container, same base) ties them together with word/phrase timestamps.
-**This repo turns those known inputs into one reproducible `master.mp4` per video via FFmpeg.**
+If you cannot demonstrate that a change preserves determinism, it does not belong here.
 
-It is not a creative layer. It is not a server. It is a set of shell scripts + a JSON schema contract + a `scripts/check` that runs before push.
+## Hard rules
 
-## Stack (bottom to top)
+1. **bash + ffmpeg + jq + awk only. No Python, no Node, no guest languages.**
+   There is no `python3` call anywhere in `bin/`, `lib/`, `scripts/` or `githooks/`.
+   Do not add one. (Note: `grep -o` is line-oriented and will not extract a multi-line
+   JSON object — that is why the loudness measurement is done with `awk`.)
+2. **No creative layer.** No generative model, no per-frame judgement, no taste-based
+   timing. A documented, fixed rule set is fine (that is plumbing); anything whose output
+   depends on a model, a random seed, or a human's opinion is not.
+3. **`FPS` stays 24.** It lives in `lib/common.sh`. Changing it changes every output.
+4. **Never `git push` without explicit confirmation from the owner.**
+5. **No half-done runs.** A failing step must stop the run with a non-zero exit. Never
+   swallow an ffmpeg failure with `|| true` — that is exactly how a missing `master.mp4`
+   once got logged as "ready".
 
-1. **Bash 5+** — every script is a runnable file under `bin/`. Same exit semantics, same flags.
-2. **FFmpeg `n9.0.1`+** — `libx264` for video, `aac` for audio, `loudnorm` for EBU R128. Output is `mp4`/`mov`.
-3. **jq** — JSON ↔ env, used to read `align-segment.json` into per-shot durations.
-4. **`scripts/check`** — runs `shellcheck` against `bin/`, validates every `inputs/*.json` against `schemas/align-segment.schema.json`.
+## Script conventions
 
-There is no Python, no Node, no Docker, no GPU at runtime. Plain shell + FFmpeg keeps the finisher reproducible for years.
+Every script in `bin/` follows the same shape:
 
-## How to work
+```bash
+#!/usr/bin/env bash
+# one-line purpose
+# Usage: bin/thing.sh [--dry-run] <args...>
 
-- **One script per operation.** Each `bin/<verb>-<noun>.sh` does exactly one stage of the pipeline. The order in AGENTS.md is the order to call them.
-- **Inputs come from upstream.** Narration is `qwen3-tts` output. Frames are ComfyUI output. Timestamps are `qwen3-aligner` output. We do not produce them here. We do not invert them.
-- **Output is one file per script.** Each script is idempotent on identical inputs. Two runs of the same script on the same inputs produce the same output (modulo the encoder's `-preset` determinism; `x264 --preset slow -tune stillimage` is stable enough).
-- **No silent failures.** Every script begins with `set -euo pipefail`, logs `[stage]` lines to stderr, and exits non-zero on any error.
-- **`scripts/check` runs before push.** This repo sets `git config core.hooksPath githooks`. The hook runs `scripts/check`. Do not hand the human a checklist.
-- **Render what you get.** No filters that "improve" the drawings. No automatic color tweaks. No lat/long EIS. We render what we get. The cutter only cuts.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$HERE/../lib/common.sh"
+parse_common_flags "$@"
+set -- ${ARGS[@]+"${ARGS[@]}"}
+require_tools
 
-## What is NOT here
-
-- No joint audio-video (motion-from-audio) generation. Drawings only.
-- No automatic frame interpolation beyond `fps=24` playback of stills.
-- No per-shot pixel comparison. Visuals are approved upstream, not here.
-- No music composition. Music is an external input.
-- No upload or publish steps. Final delivery is outside the repo.
-- No AI/Eve/Lilith calls in bin/. Binaries are dumb.
-
-## Layout
-
-```
-bin/                    shell scripts (one per operation, all sourceable)
-lib/common.sh           shared helpers; sourced, never run directly
-schemas/                JSON Schema for aligner output + per-shot renders
-inputs/                 gitignored — drop align-segment.json + frame PNGs here
-outputs/                gitignored — produced master files
-scripts/check           local CI; runs shellcheck + jsonschema validation
-githooks/pre-push       invokes scripts/check on git push
-opencode.json           enables the ponytail style plugin (per `envim`)
-docs/PIPELINE.md        visual + textual pipeline map
-docs/SCRIPTS.md         each bin/ script's contract
+[ "$#" -eq N ] || die "usage: thing.sh [--dry-run] <args...>"
 ```
 
-## Pipeline order
+- **`--dry-run` is mandatory for every new script.** Route every external command
+  through the `run` helper from `lib/common.sh`; it prints `[dry-run] <command>` and
+  returns 0 instead of executing. Accept `DRY_RUN=1` in the environment too.
+- Use `make_dir` instead of `mkdir -p` so dry-run does not create directories.
+- Use `wrote <label> <path>` for the closing log line instead of `log "... wrote ..."`,
+  so dry-run says "would write" and never claims work it did not do.
+- Log to **stderr** via `log` / `stage` / `die`. `die` exits 1.
+- Relax `require_file` checks only for files this run would have produced — see
+  `normalize-loudness.sh` and `burn-captions.sh` for the pattern.
+- Add a `# shellcheck source=lib/common.sh` comment above the `source` line.
+- **Dry-run must write no media.** Text bookkeeping (`durations.tsv`, `concat.txt`) is
+  allowed; `.mp4`/`.wav`/`.png` never.
 
-1. `bin/render-shot.sh`        (per-shot PNG → MP4 at known duration)
-2. `bin/stitch-shots.sh`       (concat per-shot MP4s → one video)
-3. `bin/mix-audio.sh`          (narration + music → stereo mix)
-4. `bin/normalize-loudness.sh` (mix → EBU R128 normalized)
-5. `bin/burn-captions.sh`      (video + SRT → captioned video)
-6. `bin/render-master.sh`      (orchestrator: runs 1–5 in the right order)
+## Invariants that are easy to break
 
-## When this repo moves upstream
+- **Frame naming and order.** `frames/shot_NNNN.png`, 4-digit, 1-based, no gaps, and
+  entry *N* of `align-segment.json` must be the picture for shot *N*. Nothing can verify
+  that a picture matches its words — a wrong order produces a perfectly-timed video with
+  the wrong images, which is the worst failure mode here because it looks fine.
+- **Timeline closure.** The first shot starts at `0.0` and the last ends exactly at the
+  narration length, so the shot durations sum to the audio duration. `group-cues.sh` is
+  responsible for that snap. Do not add a stage that breaks it.
+- **`durations.tsv` format** is `shot_NNNN<TAB>seconds`, written by
+  `write_durations_tsv` in `lib/common.sh`. Other scripts parse it; do not hand-roll it.
+- **Stitch and final mux copy the video stream** (`-c:v copy`). Do not introduce a
+  re-encode there — it would break byte-stability for no benefit.
 
-- Aligner JSON contract changes → update `schemas/align-segment.schema.json` and any jq filters in `bin/`.
-- Encoder swaps → update the `FFMPEG_*` constants in `lib/common.sh`. One place.
-- Output container changes → `bin/render-master.sh` is the only orchestrator.
+## Before you commit
+
+```sh
+scripts/check     # shellcheck (warning+ must be clean) + JSON schema validation
+scripts/smoke     # 3-shot end-to-end run; must pass in under 90 s (~1 s expected)
+```
+
+- `scripts/check` finds `shellcheck` in `~/.local/bin` if it is not on `PATH`. If it
+  reports the tool missing, confirm the tool is genuinely absent before believing it.
+- If you add or change a script, update `docs/SCRIPTS.md` and add a `CHANGELOG.md` entry.
+- If you close a task, update `TODOLIST.md`.
+
+## Replacing or porting a component
+
+When a component is rewritten, prove behaviour is unchanged rather than asserting it:
+
+1. Recover the original, e.g. `git show <rev>:bin/old.py > /tmp/old.py`.
+2. Run both on the **real reference inputs** and compare byte-for-byte (`cmp`, `sha256sum`).
+3. Run a **randomised fuzz** comparison — reference inputs alone do not exercise the
+   branches where a hand-translation typically diverges.
+4. Build an **edge fixture**: missing/empty fields, reversed timings, equal start/end,
+   quotes and backslashes in text, non-ASCII, missing optional fields.
+5. Report any divergence you find, even if you fix it. Do not describe a behavioural
+   difference as "equivalent".
+
+## Working with the upstream stages
+
+Speech, alignment and artwork happen on the GPU host (Hel) and are **not** this repo's
+job. If a fix requires re-synthesising narration, re-aligning, or re-drawing pictures,
+say so — that is an upstream change, and it means a new video, not a rebuild.
+
+## Handy facts
+
+- A full 228 s run: 40 shots, 40 clips, ~74 captions, 1920×1080, ~27 MB master.
+- Constants (all in `lib/common.sh`): `X264_PRESET=slow`, `X264_CRF=20`,
+  `X264_TUNE=stillimage`, `LOUDNORM_I=-16`, `LOUDNORM_TP=-1.5`, `LOUDNORM_LRA=11`,
+  `AUDIO_CODEC=aac`, `AUDIO_BITRATE=192k`; music gain is `0.18` in `mix-audio.sh`.
+- Determinism proof on file: re-rendering after the 2026-09-18 refactor produced
+  `sha256 d18e4b45…` both times — see README §9.

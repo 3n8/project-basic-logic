@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Docs: README.md rewritten** as a full explanation of the stack for a non-expert
+  reader: the five upstream stages and what each machine does, the timeline model
+  (words → cues → shots → durations → frames), a real 228 s run stage by stage with
+  measured numbers, the determinism guarantee and its SHA-256 proof, a repo map, a
+  glossary, and troubleshooting.
+- **Added AGENTS.md**: the working agreement for agents editing this repo — bash +
+  ffmpeg + jq + awk only (no Python), no creative layer, `--dry-run` mandatory on new
+  scripts, the frame-name/order invariant, and the byte-identity proof method required
+  when replacing a component.
+- Published to `gitea.nettsi.de/en/project-basic-logic` (private, matching `en/qwen3-tts`).
 - Fixed `bin/mix-audio.sh`: the `amix` filter graph mixed `$music_vol[music]`,
   which shellcheck flags as SC1087 (array subscript) and which is fragile in
   bash. Braced as `${music_vol}[music]`. `shellcheck --severity=warning` is now
