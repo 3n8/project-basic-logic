@@ -25,6 +25,18 @@ set -euo pipefail
 : "${AUDIO_CODEC:=aac}"
 : "${AUDIO_BITRATE:=192k}"
 
+# ---- Output geometry (--format) ---------------------------------------------
+# 16:9 is the existing 1920x1080 master. 9:16 is the short-form (vertical) master:
+# the stills are fitted into SHORTS_W x SHORTS_H, never cropped, and the frame is
+# filled behind them by a blurred copy of the same still (SHORTS_BLUR, gblur sigma
+# in output pixels). SHORTS_MAX_SECONDS is the short-form length cap: a longer input
+# is refused with a message, never truncated.
+: "${FORMAT:=16:9}"
+: "${SHORTS_W:=1080}"
+: "${SHORTS_H:=1920}"
+: "${SHORTS_BLUR:=40}"
+: "${SHORTS_MAX_SECONDS:=60}"
+
 # ---- Logging ----------------------------------------------------------------
 log()   { printf '[basic-logic] %s\n' "$*" >&2; }
 stage() { printf '[stage] %s\n' "$*" >&2; }
@@ -77,6 +89,22 @@ parse_common_flags() {
     done
 }
 
+# parse_format_flag "$@" — consume --format <16:9|9:16> / --format=<...>; the rest
+# lands in ARGS[]. FORMAT defaults to the environment (then 16:9).
+# Callers then do:  set -- ${ARGS[@]+"${ARGS[@]}"}
+parse_format_flag() {
+    ARGS=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --format)
+                [ "$#" -ge 2 ] || die "--format needs a value: 16:9|9:16"
+                FORMAT="$2"; shift 2 ;;
+            --format=*) FORMAT="${1#--format=}"; shift ;;
+            *) ARGS+=("$1"); shift ;;
+        esac
+    done
+}
+
 # ---- Tool presence ----------------------------------------------------------
 need() {
     command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"
@@ -86,6 +114,14 @@ require_tools() {
     need "$FFMPEG_BIN"
     need "$FFPROBE_BIN"
     need jq
+}
+
+# validate_format — die unless FORMAT is one of the two supported geometries.
+validate_format() {
+    case "$FORMAT" in
+        16:9|9:16) ;;
+        *) die "invalid format: '$FORMAT' (want 16:9 or 9:16)" ;;
+    esac
 }
 
 # ---- Input validation -------------------------------------------------------

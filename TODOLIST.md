@@ -6,6 +6,15 @@ _None — all items below are done._
 
 ## Done
 
+- [x] Add a vertical Shorts export mode to the deterministic finisher: `--format 16:9|9:16` on
+      `render-master.sh` / `render-shot.sh` / `burn-captions.sh` (validated once in `lib/common.sh`).
+      `9:16` = 1080x1920, stills fitted (never cropped) over a blurred fill of themselves, per-shot so
+      `stitch-shots.sh` still copies; caption style `CAPTION_STYLE_TALL` (`FontSize=14`, `MarginV=42`,
+      `MarginL/R=25`) in the bottom safe area, measured with `ffprobe`/pixel-bbox. `16:9` stays the
+      default and was proven byte-identical by re-rendering the 228 s cut (`d18e4b45…`). A `9:16` run
+      over `SHORTS_MAX_SECONDS` (60) aborts before writing media and never truncates audio.
+      `scripts/smoke` asserts both geometries with `ffprobe` and both refusal paths. Docs updated:
+      README, docs/SCRIPTS.md, docs/PIPELINE.md, CHANGELOG.md, AGENTS.md.
 - [x] Add `--dry-run` flag to every `bin/` script — print the planned ffmpeg command, do not invoke.
       Implemented once in `lib/common.sh` (`parse_common_flags`, `run`, `make_dir`, `wrote`);
       every ffmpeg call in `bin/` goes through `run`. `--dry-run` and `DRY_RUN=1` both work.

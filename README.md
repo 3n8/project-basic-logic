@@ -261,7 +261,10 @@ Reads `align-segment.json`, writes `durations.tsv`. Reports `40 shots`.
 **2/6 — Render each shot.**
 For each of the 40 rows: `shot_0001.png` + `3.6` → `shot_0001.mp4`.
 Each clip is 1920×1080, H.264, 24 frames per second, silent.
-*Why per-shot:* if one picture changes, only that one clip is rebuilt.
+*Why per-shot:* if one picture changes, only that one clip is rebuilt. With
+`--format 9:16` this same step fits each still into the vertical frame first (see
+[Formats](#formats-169-or-916-shorts) below), so every clip comes out 1080×1920 and the
+stitched video is vertical without an extra full-length pass.
 
 **3/6 — Stitch.**
 Concatenates the 40 clips into `video.mp4` using ffmpeg's concat demuxer with
@@ -283,8 +286,8 @@ Result on the real run: −16.37 LUFS, −1.49 dBTP.
 don't reach for the volume knob. −16 LUFS is the common streaming target.
 
 **6/6 — Mux the master.**
-Handles the captions according to the chosen mode (see below), then joins that video with
-`audio.wav` into `master.mp4` (video copied, audio re-encoded as AAC 192 kbit/s,
+Handles the captions according to the chosen mode and format (see below), then joins that
+video with `audio.wav` into `master.mp4` (video copied, audio re-encoded as AAC 192 kbit/s,
 `+faststart` so it starts playing before it's fully downloaded).
 
 **Result**
@@ -295,6 +298,7 @@ Handles the captions according to the chosen mode (see below), then joins that v
 | Narration length | 228.320 s |
 | Difference | **0.097 s** (see below) |
 | Picture | 1920×1080, 24 fps, H.264 |
+| Format | `16:9` (the default) |
 | Audio | AAC, −16.37 LUFS, −1.49 dBTP |
 | Shots | 40 |
 | Captions | 74 |
@@ -325,6 +329,69 @@ The mode is ignored when there is no `inputs/captions.srt`, and an invalid mode 
 run with a clear message rather than silently guessing. `burn` is the default, so an
 existing call behaves exactly as before — verified by re-rendering the full 228 s cut and
 comparing hashes (identical, `d18e4b45…`).
+
+### Formats: `16:9` or `9:16` (Shorts)
+
+`--format <16:9|9:16>` (or `FORMAT=<format>` in the environment; the command line wins)
+picks the output geometry. **`16:9` is the default**, so every existing call produces the
+same file it produced before.
+
+```sh
+bin/render-master.sh --format 9:16 --captions burn ep001-short outputs/ep001-short/master.mp4
+make render NAME=ep001-short FORMAT=9:16
+```
+
+A Short is not a second pipeline. It is the *same* pipeline — same shot order, same timing,
+same audio — with a different frame around it. Only two things change: the geometry of each
+clip, and the caption style.
+
+**Resolution, and how the stills are fitted.** The vertical target is **1080×1920**
+(`SHORTS_W`/`SHORTS_H`). Each 1920×1080 still is fitted by a fixed, deterministic rule:
+
+1. A copy of the still is scaled to *cover* 1080×1920, centre-cropped to exactly that size,
+   and blurred (`gblur sigma=40`). That is the background fill.
+2. The whole still is scaled to *fit inside* 1080×1920 — 1080×608 for a 16:9 source — and
+   centred on top of the fill.
+
+So **the picture itself is never cropped**. The full 16:9 frame stays visible, and the space
+above and below it is a blurred version of the same picture instead of black. That is also
+what protects the captions: the text is burned onto the *finished* vertical frame, so no
+later step can crop it away. The scene fits inside the frame; the frame never eats the scene.
+
+The fit happens per shot inside `render-shot.sh`, so the stitcher still concatenates with
+`-c:v copy` and a vertical run costs one encode per shot, not an extra full-length pass.
+
+**Where the captions sit.** libass (the subtitle renderer) scales the style font by the
+frame *height*, so the same `FontSize` draws much bigger text on a 1920-tall frame than on a
+1080-tall one. The two looks are therefore separate constants in `bin/burn-captions.sh`:
+
+| Format | Style constant | Measured on the real captions |
+|---|---|---|
+| `16:9` | `CAPTION_STYLE_WIDE` — `FontSize=22`, no margins | a 69 px ink line on the 1920-wide frame |
+| `9:16` | `CAPTION_STYLE_TALL` — `FontSize=14`, `MarginV=42`, `MarginL/R=25` | a 78 px ink line on the 1080-wide frame — **larger in pixels**, and about twice as large relative to frame width |
+
+The vertical margins put the caption block in the bottom **safe area**, clear of the moving
+picture: the worst caption in the reference set (75 characters) wraps to four lines, 359 px
+tall, ending 281 px (14.6 %) above the bottom edge and starting 17 px below the picture. The
+16:9 style is byte-for-byte the string it always was, so that path cannot drift.
+
+The `9:16` style is still overridable for an experiment (`CAPTION_STYLE_TALL='FontSize=20,…'`),
+and `--captions soft` still works in either format — the player styles that track, so the
+format only affects burn-in.
+
+**The 60-second cap.** A `9:16` run whose timeline is longer than `SHORTS_MAX_SECONDS`
+(default 60) stops before rendering anything:
+
+```
+[FATAL] 9:16 is capped at 60s but this input is 228.320s — refusing to truncate the audio;
+supply a short cut, or raise SHORTS_MAX_SECONDS deliberately
+```
+
+It never trims the audio to fit. Truncation would silently drop words from the end of the
+voice track while the pictures carried on — precisely the "looks fine, is wrong" output this
+repo refuses to produce. Shorts are short: supply a short cut, or raise the cap deliberately.
+The length checked is the sum of the shot durations, i.e. the same closed timeline the video
+is built from, so it is the master's real length to the millisecond.
 
 ---
 
@@ -360,7 +427,9 @@ Everything lands in `outputs/<name>/`:
 | **`master.mp4`** | **the finished video** | yes |
 
 `master.mp4` is the only file you actually want. The rest are kept so you can inspect any
-stage and see exactly where a problem came from.
+stage and see exactly where a problem came from. Everything in the run directory is in the
+format you asked for: with `--format 9:16` the clips, `video.mp4` and `master.mp4` are all
+vertical.
 
 ---
 
@@ -375,15 +444,19 @@ bin/render-master.sh <name> <where-to-write-master.mp4> [inputs_dir] [outputs_di
 bin/render-master.sh ep001 outputs/ep001/master.mp4
 ```
 
+Flags: `--dry-run`, `--captions burn|soft|off`, `--format 16:9|9:16` — all optional, all with
+the safe default (burn, 16:9).
+
 ### The friendly way
 
 ```sh
 make render NAME=ep001     # do the run
 make dry-run NAME=ep001    # print the whole plan, touch nothing
 make check                 # run the project's own checks
-make smoke                 # 3-shot end-to-end self test, all three caption modes
+make smoke                 # 3-shot end-to-end self test, both formats
 make clean NAME=ep001      # delete outputs/ep001/
 make render NAME=ep001 CAPTIONS=soft   # caption modes: burn (default) | soft | off
+make render NAME=ep001 FORMAT=9:16     # formats: 16:9 (default) | 9:16 (Shorts)
 make help
 ```
 
@@ -396,6 +469,8 @@ writes no media at all, so you can check the plan first:
 make dry-run NAME=ep001
 # or
 bin/render-master.sh --dry-run ep001 outputs/ep001/master.mp4
+# or a vertical run
+make dry-run NAME=ep001 FORMAT=9:16
 ```
 
 Every script in `bin/` supports `--dry-run` (or the environment variable `DRY_RUN=1`).
@@ -436,12 +511,19 @@ sha256  d18e4b45d58261dacf33ecf4dc7cace74e0b00175835fd481add13501eddf57f  after
 
 Identical — the refactor provably changed nothing about the output.
 
+**Same proof, one format later.** Adding `--format 9:16` touched the render stages without
+touching the default output: 16:9 is a branch the vertical fit never enters (and the 16:9
+caption style is the byte-identical string it always was). Re-rendering the same 228 s cut
+with the new code produced `sha256 d18e4b45…` a third time. The vertical output is
+deterministic in the same way — rendering the same inputs twice gives the same bytes.
+
 **What would break it** (i.e. what counts as a new video, not a bug):
 
 - a different `narration.mp3` (re-synthesised speech)
 - a different `align-segment.json` (different shot boundaries)
 - any re-rendered PNG
 - a different ffmpeg encoder version
+- a different `--format` — a vertical master is a *different video*, not a drifted one
 
 If any of those change, re-run and expect a different file. That's correct behaviour:
 different inputs are different inputs.
@@ -463,6 +545,12 @@ the entire pipeline over it, failing if it takes more than 90 seconds. It takes 
 **1 second**. It uses a faster encoder setting on purpose: the point is to prove the
 plumbing, not to produce a pretty test video.
 
+It covers all three caption modes (`burn`, `soft`, `off`) and both formats: it asserts the
+encoded geometry with `ffprobe` (320×180 for the default 16:9 pass-through, 1080×1920 for
+`--format 9:16`) and checks that the two refusal paths really refuse — an unknown `--format`
+value, and a vertical run whose timeline exceeds the short-form cap (which must leave no
+master behind, rather than a truncated one).
+
 Run both before you trust a change. `make check` and `make smoke`.
 
 ---
@@ -472,11 +560,12 @@ Run both before you trust a change. `make check` and `make smoke`.
 ```
 bin/                        the scripts (each does exactly one thing)
   render-master.sh          the orchestrator — run this one
-  render-shot.sh            one PNG + a duration → one silent clip
+  render-shot.sh            one PNG + a duration → one silent clip (--format fits 9:16)
   stitch-shots.sh           40 clips → one video track
   mix-audio.sh              voice (+ music) → one audio track
   normalize-loudness.sh     EBU R128 loudness normalisation, two passes
-  burn-captions.sh          draw captions on, or add them as a soft track (--soft)
+  burn-captions.sh          draw captions on, or add them as a soft track (--soft);
+                            --format picks the 16:9 or 9:16 caption style
   extract-segment-duration.sh   timings JSON → durations.tsv
   make-srt.sh               word timings → caption file (SRT)
   group-cues.sh             word timings → shot timings        (dev utility)
@@ -535,6 +624,10 @@ upstream, before ComfyUI draws anything.
 | **Faststart** | Writing the file so playback can begin before the whole file has downloaded. |
 | **Deterministic** | Same input, same output, every time — not "usually", strictly. |
 | **Dry run** | Show the plan; change nothing. |
+| **Aspect ratio** | The shape of the frame. 16:9 is wide (1920×1080); 9:16 is tall (1080×1920) and is what Shorts, Reels and TikTok want. |
+| **Vertical / Shorts master** | A master in 9:16. Same pipeline, different frame: the still is fitted inside it over a blurred fill of itself. |
+| **Safe area** | The part of a vertical frame the platforms don't cover with their own buttons and captions. The 9:16 caption style keeps the text inside it. |
+| **Fit vs crop** | *Fitting* shrinks the whole picture until it fits; *cropping* cuts the edges off. This repo fits the picture and fills the rest — it never crops. |
 
 ---
 
@@ -573,6 +666,22 @@ Yes — it's just bash and ffmpeg. `brew install ffmpeg jq gawk shellcheck bash`
 
 **Do I need the GPU for this?**
 No. The GPU is for the stages *before* this one (speech, alignment, artwork).
+
+**How do I make a Short?**
+`bin/render-master.sh --format 9:16 --captions burn <name> outputs/<name>/master.mp4` (or
+`make render NAME=<name> FORMAT=9:16`). You get a 1080×1920 master with the whole picture
+fitted inside a blurred fill of itself and the captions in the bottom safe area. See
+[Formats](#formats-169-or-916-shorts).
+
+**My vertical run stops with "9:16 is capped at 60s".**
+By design. Shorts are short, and the alternative — quietly cutting the audio — would drop
+words from the end of the narration while the pictures carried on. Give it a short cut, or
+raise the cap deliberately: `SHORTS_MAX_SECONDS=180 bin/render-master.sh --format 9:16 …`.
+
+**The vertical picture is small, with blurred bands above and below.**
+That is the fit working as intended: a 16:9 still cannot fill a 9:16 frame without being
+cropped, and this repo does not crop approved artwork. The bands are a blurred copy of the
+same picture, not black bars.
 
 ---
 

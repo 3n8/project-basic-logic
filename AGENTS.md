@@ -57,7 +57,11 @@ require_tools
 - **User-facing choices are flags, documented, with a safe default.** The caption mode is
   the model: `--captions burn|soft|off` in `render-master.sh`, `CAPTIONS` in the Makefile,
   `burn` as the default so no existing call changes behaviour, and an abort on a bad value.
-  Follow that shape when adding the next option. Do not silently change a default.
+  `--format 16:9|9:16` follows the same shape (`FORMAT` in the Makefile, `16:9` as the
+  default, abort on anything else); its value is parsed once in `lib/common.sh`
+  (`parse_format_flag` / `validate_format`) so the orchestrator and the stages it calls
+  cannot disagree. Follow that shape when adding the next option. Do not silently change a
+  default.
 - Add a `# shellcheck source=lib/common.sh` comment above the `source` line.
 - **Dry-run must write no media.** Text bookkeeping (`durations.tsv`, `concat.txt`) is
   allowed; `.mp4`/`.wav`/`.png` never.
@@ -74,7 +78,17 @@ require_tools
 - **`durations.tsv` format** is `shot_NNNN<TAB>seconds`, written by
   `write_durations_tsv` in `lib/common.sh`. Other scripts parse it; do not hand-roll it.
 - **Stitch and final mux copy the video stream** (`-c:v copy`). Do not introduce a
-  re-encode there — it would break byte-stability for no benefit.
+  re-encode there — it would break byte-stability for no benefit. The vertical fit belongs
+  in `render-shot.sh` (per shot) for exactly this reason.
+- **The 16:9 default is a contract, not a preference.** `--format 16:9` must keep producing
+  the bytes it produced before the option existed: the 16:9 branch must not enter the
+  vertical fit, and the wide caption style string must stay byte-identical. Prove it by
+  re-rendering the full cut and comparing SHA-256 (§9 of README).
+- **The picture is never cropped, and the audio is never truncated.** A vertical master
+  *fits* the still and fills the rest with a blurred copy of itself. A short-form run over
+  `SHORTS_MAX_SECONDS` fails with a message naming the measured length; there is no
+  truncating fallback, because silently dropping the tail of the narration looks like a
+  finished video while being wrong.
 
 ## Before you commit
 
@@ -112,6 +126,10 @@ say so — that is an upstream change, and it means a new video, not a rebuild.
 - A full 228 s run: 40 shots, 40 clips, ~74 captions, 1920×1080, ~27 MB master.
 - Constants (all in `lib/common.sh`): `X264_PRESET=slow`, `X264_CRF=20`,
   `X264_TUNE=stillimage`, `LOUDNORM_I=-16`, `LOUDNORM_TP=-1.5`, `LOUDNORM_LRA=11`,
-  `AUDIO_CODEC=aac`, `AUDIO_BITRATE=192k`; music gain is `0.18` in `mix-audio.sh`.
+  `AUDIO_CODEC=aac`, `AUDIO_BITRATE=192k`, `FORMAT=16:9`, `SHORTS_W=1080`,
+  `SHORTS_H=1920`, `SHORTS_BLUR=40`, `SHORTS_MAX_SECONDS=60`; music gain is `0.18` in
+  `mix-audio.sh`; the two caption styles (`CAPTION_STYLE_WIDE`/`CAPTION_STYLE_TALL`) live at
+  the top of `burn-captions.sh`.
+- A `9:16` run on a real cut: 41.5 s prefix → 1080x1920, ~1.6 MB, one encode per shot.
 - Determinism proof on file: re-rendering after the 2026-09-18 refactor produced
   `sha256 d18e4b45…` both times — see README §9.

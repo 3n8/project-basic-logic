@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/smoke — generate the tiny fixture and run the pipeline end to end.
-# Covers all three caption modes. Budget: < 90 s; uses X264_PRESET=veryfast so the
-# plumbing, not the encoder, is what gets tested.
+# Covers all three caption modes and both output formats. Budget: < 90 s; uses
+# X264_PRESET=veryfast so the plumbing, not the encoder, is what gets tested.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -27,6 +27,14 @@ check_master() {
     fi
 }
 
+# check_dims <path> <W,H> — the encoded geometry, read back with ffprobe.
+check_dims() {
+    local m="$1" want="$2" got
+    [ -s "$m" ] || die "smoke: no master produced at $m"
+    got="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$m")"
+    [ "$got" = "$want" ] || die "smoke: expected $want in $m, got $got"
+}
+
 for mode in burn soft off; do
     rm -rf "outputs/smoke-$mode"
     bin/render-master.sh --captions "$mode" \
@@ -37,8 +45,34 @@ check_master outputs/smoke-burn/master.mp4 no    # burned into the picture, no s
 check_master outputs/smoke-soft/master.mp4 yes   # a real, switchable subtitle track
 check_master outputs/smoke-off/master.mp4  no    # no subtitles at all
 
+# The default 16:9 path must stay untouched: the 320x180 fixture passes through unscaled.
+check_dims outputs/smoke-burn/master.mp4 "320,180"
+
+# 9:16: same fixture, same captions, vertical master.
+rm -rf outputs/smoke-shorts
+bin/render-master.sh --captions burn --format 9:16 \
+    "smoke-shorts" "outputs/smoke-shorts/master.mp4" inputs/smoke outputs
+check_dims outputs/smoke-shorts/master.mp4 "${SHORTS_W},${SHORTS_H}"
+check_master outputs/smoke-shorts/master.mp4 no  # burned in, no separate track
+
+# An unknown format must abort rather than guess.
+if bin/render-master.sh --format 4:3 \
+    "smoke-bad" "outputs/smoke-bad/master.mp4" inputs/smoke outputs >/dev/null 2>&1; then
+    die "smoke: --format 4:3 was accepted; an unknown format must abort"
+fi
+
+# A short-form run longer than the cap must abort and leave no master behind: the audio
+# is never truncated. The fixture is 6 s, so a 5 s cap must refuse it.
+if SHORTS_MAX_SECONDS=5 bin/render-master.sh --format 9:16 \
+    "smoke-cap" "outputs/smoke-cap/master.mp4" inputs/smoke outputs >/dev/null 2>&1; then
+    die "smoke: a 6 s input passed a 5 s short-form cap"
+fi
+if [ -e outputs/smoke-cap/master.mp4 ]; then
+    die "smoke: the over-cap run left a master behind"
+fi
+
 elapsed=$(( $(date +%s) - start ))
-log "smoke: caption modes burn/soft/off OK in ${elapsed}s"
+log "smoke: caption modes burn/soft/off + formats 16:9/9:16 OK in ${elapsed}s"
 
 if [ "$elapsed" -ge 90 ]; then
     die "smoke: ${elapsed}s exceeds the 90s budget"

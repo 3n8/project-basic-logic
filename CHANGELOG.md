@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **Vertical Shorts output: `--format 16:9|9:16`** on `render-master.sh` (also `FORMAT=` in
+  the environment; the flag wins). `16:9` is the default, so no existing call changes.
+  `9:16` renders a 1080x1920 master (`SHORTS_W`/`SHORTS_H`) for YouTube Shorts / Reels /
+  TikTok, captioned for the vertical frame.
+  - The stills are **fitted, never cropped**: a blurred, centre-cropped copy of the still
+    fills the frame (`gblur sigma=SHORTS_BLUR`, default 40) and the whole still is scaled to
+    fit and centred on top of it. A 1920x1080 still therefore occupies 1080x608 in the
+    middle of the vertical frame. The fit is applied per shot in `render-shot.sh`, so the
+    stitcher still concatenates with `-c:v copy` and a vertical run costs one encode per
+    shot rather than an extra full-length pass.
+  - Captions are burned *after* the fit, onto the finished vertical frame, so nothing can
+    crop the text away.
+  - **New vertical caption style**: `CAPTION_STYLE_TALL` in `burn-captions.sh`
+    (`FontSize=14`, `MarginV=42`, `MarginL=25`, `MarginR=25`), separate from
+    `CAPTION_STYLE_WIDE` (the untouched original `FontSize=22`). libass scales the style
+    font by frame height, so the tall style renders a *larger* line than the wide one
+    (measured 78 px on a 1080-wide frame vs 69 px on a 1920-wide frame) and sits in the
+    bottom safe area: the worst reference caption (75 chars) wraps to 4 lines, 359 px tall,
+    ending 281 px (14.6 %) above the bottom edge and clear of the picture band.
+  - **Short-form length cap**: a `9:16` run longer than `SHORTS_MAX_SECONDS` (default 60)
+    aborts after the durations table, before writing any media, and **never truncates the
+    audio** — the message names the measured length and points at the cap. The length
+    checked is the sum of `durations.tsv`, the same closed timeline the video is built from.
+  - `--format` on `render-shot.sh` and `burn-captions.sh` too (both default `16:9`, both
+    abort on an invalid value); validated once in `lib/common.sh` (`parse_format_flag`,
+    `validate_format`), so the orchestrator and the stages cannot disagree.
+  - `Makefile`: `FORMAT ?= 16:9`, passed through by `render` and `dry-run`.
+  - `scripts/smoke` now also covers the format: asserts the encoded geometry with `ffprobe`
+    (320x180 default pass-through, 1080x1920 vertical), and checks the two refusal paths — an
+    unknown `--format` and an over-cap `9:16` run (which must leave no master behind). Still
+    ~7 s, well under the 90 s budget.
+  - **16:9 proven untouched**: re-rendering the full 228 s cut with the new code produced
+    `sha256 d18e4b45…` again — identical to the two earlier renders. The vertical path is
+    deterministic too (same inputs twice → same bytes).
 - **Captions are now a choice, not forced:** `render-master.sh` takes
   `--captions burn|soft|off` (also `CAPTIONS=<mode>` in the environment; the flag wins).
   `burn` is the default, so existing calls behave exactly as before. `soft` attaches a
