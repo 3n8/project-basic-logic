@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# scripts/smoke — generate the tiny fixture and run the pipeline end to end.
+# Budget: < 90 s. Uses X264_PRESET=veryfast so the plumbing is what gets tested.
+
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/.."
+# shellcheck source=lib/common.sh
+source "$HERE/../lib/common.sh"
+
+export X264_PRESET="${SMOKE_X264_PRESET:-veryfast}"
+
+start="$(date +%s)"
+
+bin/make-smoke-fixture.sh inputs/smoke
+rm -rf outputs/smoke
+bin/render-master.sh smoke outputs/smoke/master.mp4 inputs/smoke outputs
+
+[ -s outputs/smoke/master.mp4 ] || die "smoke: no master produced"
+elapsed=$(( $(date +%s) - start ))
+log "smoke: master.mp4 OK in ${elapsed}s"
+
+if [ "$elapsed" -ge 90 ]; then
+    die "smoke: ${elapsed}s exceeds the 90s budget"
+fi
+
+log "smoke: pass"

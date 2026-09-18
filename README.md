@@ -68,6 +68,54 @@ Full pipeline map: [docs/PIPELINE.md](docs/PIPELINE.md).
 
 Read [docs/SCRIPTS.md](docs/SCRIPTS.md) for the per-script contract (inputs, outputs, exit codes).
 
+## Makefile
+
+Thin wrappers, if you don't want to type `bin/render-master.sh` directly:
+
+```sh
+make render NAME=ep001            # bin/render-master.sh ep001 outputs/ep001/master.mp4 inputs outputs
+make dry-run NAME=ep001           # print the planned pipeline, run nothing
+make check                        # scripts/check
+make smoke                        # tiny fixture, end to end, < 90 s
+make clean NAME=ep001             # remove outputs/ep001/
+make help
+```
+
+## Dry run
+
+Every script in `bin/` accepts `--dry-run` (or `DRY_RUN=1`). It prints the exact
+ffmpeg command it would run and writes no media, so you can inspect a full
+pipeline before committing to a long encode:
+
+```sh
+bin/render-master.sh --dry-run ep001 outputs/ep001/master.mp4
+```
+
+## Smoke test
+
+`scripts/smoke` generates a 3-shot / 6-second fixture with
+`bin/make-smoke-fixture.sh` (frames are produced with ffmpeg, narration is a quiet
+tone) and runs the whole pipeline against it. `inputs/` is gitignored, so the
+fixture is generated rather than committed. Budget: 90 seconds; measured: ~1 second.
+
+```sh
+make smoke      # or: scripts/smoke
+```
+
+## AMD / ROCm hosts
+
+The standalone `HSA_OVERRIDE_GFX_VERSION` environment variable matters on AMD hosts
+that run ROCm workloads: recent consumer GPUs are not always recognised by the ROCm
+runtime, and `HSA_OVERRIDE_GFX_VERSION` is how you tell it to treat the card as a
+supported one. Setting it to the wrong value makes GPU workloads fail or fall back
+to CPU.
+
+**This repo is not one of those workloads.** `project-basic-logic` is bash + FFmpeg
+with no GPU code, so it must never require or set `HSA_OVERRIDE_GFX_VERSION` — if a
+finisher run only works with it set, something else on the host is wrong. The
+variable belongs to the upstream GPU services on the same machine (`qwen3-tts`,
+`qwen3-aligner`, ComfyUI); set it there, not here.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

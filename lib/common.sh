@@ -30,6 +30,53 @@ log()   { printf '[basic-logic] %s\n' "$*" >&2; }
 stage() { printf '[stage] %s\n' "$*" >&2; }
 die()   { printf '[FATAL] %s\n' "$*" >&2; exit 1; }
 
+# wrote <label> <path> — completion line that stays truthful in dry-run mode.
+wrote() {
+    if dry_run_enabled; then
+        log "$1: would write $2"
+    else
+        log "$1: wrote $2"
+    fi
+}
+
+# ---- Dry-run support --------------------------------------------------------
+# --dry-run (or DRY_RUN=1) prints the exact planned command instead of running it.
+: "${DRY_RUN:=0}"
+
+dry_run_enabled() { [ "$DRY_RUN" = "1" ]; }
+
+# run <cmd> [args...] — execute the command, or print it when dry-run is on.
+run() {
+    if dry_run_enabled; then
+        printf '[dry-run] %s\n' "$*" >&2
+        return 0
+    fi
+    "$@"
+}
+
+# make_dir <dir> — create a directory unless we are in dry-run.
+make_dir() {
+    if dry_run_enabled; then
+        return 0
+    fi
+    mkdir -p "$1"
+}
+
+# parse_common_flags "$@" — consume --dry-run; remaining operands land in ARGS[].
+# Callers then do:  set -- ${ARGS[@]+"${ARGS[@]}"}
+ARGS=()
+parse_common_flags() {
+    ARGS=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --dry-run) DRY_RUN=1 ;;
+            --) shift; ARGS+=("$@"); break ;;
+            *) ARGS+=("$1") ;;
+        esac
+        shift
+    done
+}
+
 # ---- Tool presence ----------------------------------------------------------
 need() {
     command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"
@@ -64,9 +111,9 @@ write_durations_tsv() {
 }
 
 # ---- Layout -----------------------------------------------------------------
+# ensure_layout <name> <out_root> — create outputs/<name> and print it.
 ensure_layout() {
     local name="$1" out_root="$2"
-    require_dir "$out_root" || mkdir -p "$out_root"
     mkdir -p "$out_root/$name"
     printf '%s\n' "$out_root/$name"
 }
