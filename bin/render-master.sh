@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # render-master.sh — the orchestrator.
-# Usage: bin/render-master.sh [--dry-run] <name> <master.mp4> [inputs_dir] [outputs_dir]
+# Usage: bin/render-master.sh [--dry-run] [--captions burn|soft|off] <name> <master.mp4> [inputs_dir] [outputs_dir]
+#
+# Captions — pick a mode per render (--captions <mode>, or the CAPTIONS env var):
+#   burn  (default) burned into the picture; always visible, matches a Shorts-style look
+#   soft            a separate, switchable subtitle track next to the audio
+#   off             no subtitles in the master at all
+# Captions are only used when inputs/captions.srt exists.
 #
 # Default inputs_dir=./inputs, outputs_dir=./outputs.
 # Reads:
@@ -22,11 +28,34 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$HERE/../lib/common.sh"
+
+# Caption mode: burn (default) | soft | off. Accepts --captions <mode> or --captions=<mode>,
+# or the CAPTIONS environment variable. The command line wins over the environment.
+CAPTIONS="${CAPTIONS:-burn}"
+_render_args=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --captions)
+            [ "$#" -ge 2 ] || die "--captions needs a value: burn|soft|off"
+            CAPTIONS="$2"
+            shift 2
+            ;;
+        --captions=*) CAPTIONS="${1#--captions=}"; shift ;;
+        *) _render_args+=("$1"); shift ;;
+    esac
+done
+set -- ${_render_args[@]+"${_render_args[@]}"}
+
 parse_common_flags "$@"
 set -- ${ARGS[@]+"${ARGS[@]}"}
 require_tools
 
-[ "$#" -ge 2 ] && [ "$#" -le 4 ] || die "usage: render-master.sh [--dry-run] <name> <master.mp4> [inputs_dir] [outputs_dir]"
+case "$CAPTIONS" in
+    burn|soft|off) ;;
+    *) die "invalid captions mode: '$CAPTIONS' (want burn|soft|off)" ;;
+esac
+
+[ "$#" -ge 2 ] && [ "$#" -le 4 ] || die "usage: render-master.sh [--dry-run] [--captions burn|soft|off] <name> <master.mp4> [inputs_dir] [outputs_dir]"
 NAME="$1"; MASTER="$2"
 IN_DIR="${3:-inputs}"; OUT_DIR="${4:-outputs}"
 
@@ -84,28 +113,43 @@ fi
 
 # ---- 6. mux video + audio + (optional captions) ------------------------
 stage "6/6 muxing final master"
-if [ -f "$IN_DIR/captions.srt" ]; then
+SRC_VIDEO="$RUN_DIR/video.mp4"
+HAVE_CAPTIONS=0
+if [ -f "$IN_DIR/captions.srt" ] && [ "$CAPTIONS" != "off" ]; then
+    HAVE_CAPTIONS=1
+fi
+
+if [ "$HAVE_CAPTIONS" = "1" ]; then
     if ! dry_run_enabled; then
         cp "$IN_DIR/captions.srt" "$RUN_DIR/captions.srt"
     fi
-    "$HERE/burn-captions.sh" \
-        "$RUN_DIR/video.mp4" "$RUN_DIR/captions.srt" "$RUN_DIR/captioned.mp4"
-    run "$FFMPEG_BIN" -nostdin -hide_banner -loglevel error -y \
-        -i "$RUN_DIR/captioned.mp4" -i "$RUN_DIR/audio.wav" \
-        -map 0:v -map 1:a \
-        -c:v copy -c:a "$AUDIO_CODEC" -b:a "$AUDIO_BITRATE" \
-        -movflags +faststart \
-        "$MASTER"
-    if ! dry_run_enabled; then
-        rm -f "$RUN_DIR/captioned.mp4"
+    if [ "$CAPTIONS" = "soft" ]; then
+        "$HERE/burn-captions.sh" \
+            "$RUN_DIR/video.mp4" "$RUN_DIR/captions.srt" "$RUN_DIR/captioned.mp4" --soft
+    else
+        "$HERE/burn-captions.sh" \
+            "$RUN_DIR/video.mp4" "$RUN_DIR/captions.srt" "$RUN_DIR/captioned.mp4"
     fi
+    SRC_VIDEO="$RUN_DIR/captioned.mp4"
+    log "render-master: captions mode = $CAPTIONS"
 else
-    run "$FFMPEG_BIN" -nostdin -hide_banner -loglevel error -y \
-        -i "$RUN_DIR/video.mp4" -i "$RUN_DIR/audio.wav" \
-        -map 0:v -map 1:a \
-        -c:v copy -c:a "$AUDIO_CODEC" -b:a "$AUDIO_BITRATE" \
-        -movflags +faststart \
-        "$MASTER"
+    if [ ! -f "$IN_DIR/captions.srt" ]; then
+        log "render-master: no $IN_DIR/captions.srt — master will have no subtitles"
+    else
+        log "render-master: captions mode = off — master will have no subtitles"
+    fi
+fi
+
+# Map the subtitle stream only when there is one ('?' makes it optional).
+run "$FFMPEG_BIN" -nostdin -hide_banner -loglevel error -y \
+    -i "$SRC_VIDEO" -i "$RUN_DIR/audio.wav" \
+    -map 0:v -map 0:s? -map 1:a \
+    -c:v copy -c:s copy -c:a "$AUDIO_CODEC" -b:a "$AUDIO_BITRATE" \
+    -movflags +faststart \
+    "$MASTER"
+
+if [ "$HAVE_CAPTIONS" = "1" ] && ! dry_run_enabled; then
+    rm -f "$RUN_DIR/captioned.mp4"
 fi
 
 if dry_run_enabled; then

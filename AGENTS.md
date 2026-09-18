@@ -54,6 +54,10 @@ require_tools
 - Log to **stderr** via `log` / `stage` / `die`. `die` exits 1.
 - Relax `require_file` checks only for files this run would have produced — see
   `normalize-loudness.sh` and `burn-captions.sh` for the pattern.
+- **User-facing choices are flags, documented, with a safe default.** The caption mode is
+  the model: `--captions burn|soft|off` in `render-master.sh`, `CAPTIONS` in the Makefile,
+  `burn` as the default so no existing call changes behaviour, and an abort on a bad value.
+  Follow that shape when adding the next option. Do not silently change a default.
 - Add a `# shellcheck source=lib/common.sh` comment above the `source` line.
 - **Dry-run must write no media.** Text bookkeeping (`durations.tsv`, `concat.txt`) is
   allowed; `.mp4`/`.wav`/`.png` never.

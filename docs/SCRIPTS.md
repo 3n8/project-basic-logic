@@ -67,10 +67,11 @@ Targets (overridable via env): `LOUDNORM_I=-16`, `LOUDNORM_TP=-1.5`, `LOUDNORM_L
 
 ## `bin/burn-captions.sh`
 
-Burn an SRT into the video (default) or mux as soft sub (`--soft`).
+Burn an SRT into the video (default) or mux as soft sub (`--soft`). Called by
+`render-master.sh`, which picks the mode; run it directly only to redo this step alone.
 
 ```
-bin/burn-captions.sh <input.mp4> <captions.srt> <output.mp4> [--soft]
+bin/burn-captions.sh [--dry-run] <input.mp4> <captions.srt> <output.mp4> [--soft]
 ```
 
 ## `bin/render-master.sh`
@@ -78,8 +79,17 @@ bin/burn-captions.sh <input.mp4> <captions.srt> <output.mp4> [--soft]
 The orchestrator. Runs every stage in order.
 
 ```
-bin/render-master.sh <name> <master.mp4> [inputs_dir] [outputs_dir]
+bin/render-master.sh [--dry-run] [--captions burn|soft|off] <name> <master.mp4> [inputs_dir] [outputs_dir]
 ```
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--dry-run` | off | Print every planned ffmpeg command, write no media (also `DRY_RUN=1`) |
+| `--captions burn\|soft\|off` | `burn` | How to handle `captions.srt`. Also settable via the `CAPTIONS` env var; the flag wins. An invalid value aborts. Mode is ignored when there is no `captions.srt`. |
+
+Caption modes: **`burn`** draws the text into the picture (always visible, the Shorts
+look); **`soft`** attaches a switchable subtitle track next to the audio (long-form);
+**`off`** leaves the master without subtitles.
 
 After completion the run directory at `outputs/<name>/` contains every
 intermediate file plus the final `master.mp4` at the path you passed.

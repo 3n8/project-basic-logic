@@ -33,9 +33,11 @@
    `linear=true`). Target I=-16, TP=-1.5, LRA=11. Pass 1 measures,
    pass 2 applies. Output is again 48/2/PCM24.
 
-5. **burn-captions** — if `captions.srt` exists, mux into video. Burn-in
-   is the default (image-rendered text); `--soft` keeps SRT as a separate
-   track.
+5. **burn-captions** — if `captions.srt` exists, mux into video according to the
+   caption mode chosen on the orchestrator (`--captions burn|soft|off`):
+   `burn` draws the text into the picture (image-rendered, always visible), `soft`
+   attaches a switchable subtitle track, `off` skips captions entirely. The final
+   mux maps the subtitle stream only when one exists.
 
 6. **render-master** (orchestrator) — runs 1–5 in order, plus the final
    mux: video + audio + optional captions.

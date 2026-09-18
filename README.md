@@ -283,9 +283,9 @@ Result on the real run: −16.37 LUFS, −1.49 dBTP.
 don't reach for the volume knob. −16 LUFS is the common streaming target.
 
 **6/6 — Mux the master.**
-Burns the 74 captions into the picture, then joins that video with `audio.wav` into
-`master.mp4` (video copied, audio re-encoded as AAC 192 kbit/s, `+faststart` so it starts
-playing before it's fully downloaded).
+Handles the captions according to the chosen mode (see below), then joins that video with
+`audio.wav` into `master.mp4` (video copied, audio re-encoded as AAC 192 kbit/s,
+`+faststart` so it starts playing before it's fully downloaded).
 
 **Result**
 
@@ -304,6 +304,27 @@ fixed 1/24-second boundaries, so a 3.6 s shot is 86 frames (3.583 s) or 87 (3.62
 each shot can be off by up to half a frame, and 40 of those add up to a few hundredths of
 a second over four minutes. Nobody can see or hear it, and it is *the same* every run,
 because the rounding is deterministic too.
+
+### Captions: three modes
+
+Burn-in is no longer forced. Pick the mode per render with `--captions <mode>` (or the
+`CAPTIONS` environment variable; the command line wins):
+
+| Mode | What you get | Good for |
+|---|---|---|
+| `burn` *(default)* | Captions drawn permanently into the picture — always visible, in every player, with no toggles | **Shorts** and social clips, where they're part of the look and viewers usually watch muted |
+| `soft` | A separate subtitle track sitting next to the audio, switchable on and off by the viewer | **Long-form** video, where baked-in text over four minutes is intrusive and can't be turned off or translated |
+| `off` | No subtitles in the master at all | Clean masters, or when you want to add subtitles later in an editor |
+
+```sh
+bin/render-master.sh --captions soft ep001 outputs/ep001/master.mp4
+make render NAME=ep001 CAPTIONS=off
+```
+
+The mode is ignored when there is no `inputs/captions.srt`, and an invalid mode stops the
+run with a clear message rather than silently guessing. `burn` is the default, so an
+existing call behaves exactly as before — verified by re-rendering the full 228 s cut and
+comparing hashes (identical, `d18e4b45…`).
 
 ---
 
@@ -334,8 +355,8 @@ Everything lands in `outputs/<name>/`:
 | `video.mp4` | all shots stitched | yes |
 | `audio_raw.wav` | mixed, not yet normalised | deleted after use |
 | `audio.wav` | mixed **and** normalised | yes |
-| `captions.srt` | a copy of the input captions | yes |
-| `captioned.mp4` | video with captions burned in | deleted after use |
+| `captions.srt` | a copy of the input captions (only when captions are used) | yes |
+| `captioned.mp4` | video with captions burned in or added as a soft track | deleted after use |
 | **`master.mp4`** | **the finished video** | yes |
 
 `master.mp4` is the only file you actually want. The rest are kept so you can inspect any
@@ -360,8 +381,9 @@ bin/render-master.sh ep001 outputs/ep001/master.mp4
 make render NAME=ep001     # do the run
 make dry-run NAME=ep001    # print the whole plan, touch nothing
 make check                 # run the project's own checks
-make smoke                 # 3-second end-to-end self test
+make smoke                 # 3-shot end-to-end self test, all three caption modes
 make clean NAME=ep001      # delete outputs/ep001/
+make render NAME=ep001 CAPTIONS=soft   # caption modes: burn (default) | soft | off
 make help
 ```
 

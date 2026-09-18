@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Captions are now a choice, not forced:** `render-master.sh` takes
+  `--captions burn|soft|off` (also `CAPTIONS=<mode>` in the environment; the flag wins).
+  `burn` is the default, so existing calls behave exactly as before. `soft` attaches a
+  switchable subtitle track instead of drawing text into the picture; `off` leaves the
+  master without subtitles. An invalid mode aborts with a message. The final mux now maps
+  the subtitle stream only when one exists (`-map 0:s?`).
+- `scripts/smoke` now covers all three caption modes and asserts the resulting stream
+  shape (burn/off → no subtitle track; soft → exactly one). Still ~3 s, well under budget.
+- `Makefile`: `CAPTIONS ?= burn`, passed through by `render` and `dry-run`.
+- Verified default-path safety: re-rendering the full 228 s cut with the new code produced
+  `sha256 d18e4b45…` again — identical to before the change.
 - **Docs: README.md rewritten** as a full explanation of the stack for a non-expert
   reader: the five upstream stages and what each machine does, the timeline model
   (words → cues → shots → durations → frames), a real 228 s run stage by stage with
