@@ -8,6 +8,13 @@ cd "$HERE/.."
 
 echo "[check] shellcheck bin/ ..."
 
+# The linter commonly lands in ~/.local/bin, which is not always on PATH — notably
+# when this runs from githooks/pre-push. Find it rather than silently skipping.
+if ! command -v shellcheck >/dev/null 2>&1 && [ -x "$HOME/.local/bin/shellcheck" ]; then
+    PATH="$HOME/.local/bin:$PATH"
+    export PATH
+fi
+
 if ! command -v shellcheck >/dev/null 2>&1; then
     echo "[check] WARN: shellcheck not installed; skipping" >&2
 else
